@@ -17,12 +17,12 @@ import lombok.NoArgsConstructor;
 public class User { 
 
     @Id
-    private Long id;
+    private String id;
 
     private String username;
 
     private String email;
-    
+
     private String encryptedSocialSecurityNumber;
 
 }
