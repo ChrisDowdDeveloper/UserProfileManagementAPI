@@ -6,6 +6,6 @@ import com.christopherdowd.UserProfileManagement.domain.User;
 import com.google.cloud.spring.data.datastore.repository.DatastoreRepository;
 
 @Repository
-public interface UserProfileRepository 
+public interface UserRepository 
     extends DatastoreRepository<User, String> {
 }
