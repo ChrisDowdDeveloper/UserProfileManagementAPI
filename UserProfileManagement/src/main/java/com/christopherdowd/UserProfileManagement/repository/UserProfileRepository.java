@@ -2,10 +2,10 @@ package com.christopherdowd.UserProfileManagement.repository;
 
 import org.springframework.stereotype.Repository;
 
-import com.christopherdowd.UserProfileManagement.domain.User;
+import com.christopherdowd.UserProfileManagement.domain.UserProfile;
 import com.google.cloud.spring.data.datastore.repository.DatastoreRepository;
 
 @Repository
-public interface UserRepository 
-    extends DatastoreRepository<User, String> {
+public interface UserProfileRepository 
+    extends DatastoreRepository<UserProfile, String> {
 }

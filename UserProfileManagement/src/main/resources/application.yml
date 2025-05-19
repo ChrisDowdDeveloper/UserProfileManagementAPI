@@ -1,6 +1,0 @@
-spring:
-  cloud:
-    gcp:
-      project-id: userprofilemanagement-460201
-      credentials:
-        location: file:${HOME}/.gcp/userprofilemanagement-key.json

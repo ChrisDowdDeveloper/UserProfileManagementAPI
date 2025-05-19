@@ -2,22 +2,22 @@ package com.christopherdowd.UserProfileManagement.mapper;
 
 import org.springframework.stereotype.Component;
 
-import com.christopherdowd.UserProfileManagement.domain.User;
-import com.christopherdowd.UserProfileManagement.dto.UserRequestDto;
-import com.christopherdowd.UserProfileManagement.dto.UserResponseDto;
-import com.christopherdowd.UserProfileManagement.dto.UserUpdateRequestDto;
+import com.christopherdowd.UserProfileManagement.domain.UserProfile;
+import com.christopherdowd.UserProfileManagement.dto.UserProfileRequestDto;
+import com.christopherdowd.UserProfileManagement.dto.UserProfileResponseDto;
+import com.christopherdowd.UserProfileManagement.dto.UserProfileUpdateRequestDto;
 
 import java.util.List;
 import java.util.stream.Collectors;
 
 @Component
-public class UserMapper {
+public class UserProfileMapper {
 
-    public UserResponseDto toUserResponseDto(User user) {
+    public UserProfileResponseDto toUserResponseDto(UserProfile user) {
         if (user == null) {
             return null;
         }
-        UserResponseDto dto = new UserResponseDto();
+        UserProfileResponseDto dto = new UserProfileResponseDto();
 
         dto.setId(user.getId());
         dto.setUsername(user.getUsername());
@@ -26,7 +26,7 @@ public class UserMapper {
         return dto;
     }
 
-    public List<UserResponseDto> toUserResponseDtoList(List<User> users) {
+    public List<UserProfileResponseDto> toUserResponseDtoList(List<UserProfile> users) {
         if (users == null) {
             return null;
         }
@@ -35,12 +35,12 @@ public class UserMapper {
                 .collect(Collectors.toList());
     }
 
-    public User toUser(UserRequestDto dto) {
+    public UserProfile toUser(UserProfileRequestDto dto) {
         if (dto == null) {
             return null;
         }
         
-        User u = new User();
+        UserProfile u = new UserProfile();
 
         u.setUsername(dto.getUsername());
         u.setEmail(dto.getEmail());
@@ -48,7 +48,7 @@ public class UserMapper {
         return u;
     }
 
-    public void updateUserFromDto(UserUpdateRequestDto userUpdateRequestDto, User user) {
+    public void updateUserFromDto(UserProfileUpdateRequestDto userUpdateRequestDto, UserProfile user) {
         if (userUpdateRequestDto == null || user == null) {
             return;
         }

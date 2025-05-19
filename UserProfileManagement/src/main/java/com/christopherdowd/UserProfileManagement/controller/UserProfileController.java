@@ -13,41 +13,41 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.christopherdowd.UserProfileManagement.dto.UserRequestDto;
-import com.christopherdowd.UserProfileManagement.dto.UserResponseDto;
-import com.christopherdowd.UserProfileManagement.dto.UserUpdateRequestDto;
-import com.christopherdowd.UserProfileManagement.service.UserService;
+import com.christopherdowd.UserProfileManagement.dto.UserProfileRequestDto;
+import com.christopherdowd.UserProfileManagement.dto.UserProfileResponseDto;
+import com.christopherdowd.UserProfileManagement.dto.UserProfileUpdateRequestDto;
+import com.christopherdowd.UserProfileManagement.service.UserProfileService;
 
 import jakarta.validation.Valid;
 
 @RestController
 @RequestMapping("/api/users")
-public class UserController {
+public class UserProfileController {
     
-    private final UserService service;
+    private final UserProfileService service;
 
-    public UserController(UserService service) {
+    public UserProfileController(UserProfileService service) {
         this.service = service;
     }
 
     @GetMapping
-    public List<UserResponseDto> getAll() {
+    public List<UserProfileResponseDto> getAll() {
         return service.getAll();
     }
 
     @GetMapping("/{id}")
-    public UserResponseDto getById(@PathVariable String id) {
+    public UserProfileResponseDto getById(@PathVariable String id) {
         return service.getById(id);
     }
 
     @PostMapping
-    public ResponseEntity<UserResponseDto> create(@RequestBody @Valid UserRequestDto dto) {
-        UserResponseDto saved = service.create(dto);
+    public ResponseEntity<UserProfileResponseDto> create(@RequestBody @Valid UserProfileRequestDto dto) {
+        UserProfileResponseDto saved = service.create(dto);
         return new ResponseEntity<>(saved, HttpStatus.CREATED);
     }
 
     @PutMapping("/{id}")
-    public UserResponseDto update(@PathVariable String id, @RequestBody @Valid UserUpdateRequestDto dto) {
+    public UserProfileResponseDto update(@PathVariable String id, @RequestBody @Valid UserProfileUpdateRequestDto dto) {
         return service.update(id, dto);
     }
 

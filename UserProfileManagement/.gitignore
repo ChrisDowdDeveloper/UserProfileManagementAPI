@@ -3,6 +3,15 @@ target/
 !.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
+application.properties
+application.yml
+keystore.p12
+# in .gitignore
+# ignore local config
+/UserProfileManagement/src/main/resources/application.properties
+/UserProfileManagement/src/main/resources/application.yml
+
+
 
 ### STS ###
 .apt_generated
