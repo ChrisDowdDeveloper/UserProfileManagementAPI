@@ -1,5 +1,15 @@
 package com.christopherdowd.UserProfileManagement.service.impl;
 
+import com.christopherdowd.UserProfileManagement.domain.UserProfile;
+import com.christopherdowd.UserProfileManagement.dto.UserCreationMessageDto;
+import com.christopherdowd.UserProfileManagement.dto.UserProfileRequestDto;
+import com.christopherdowd.UserProfileManagement.dto.UserProfileResponseDto;
+import com.christopherdowd.UserProfileManagement.repository.UserProfileRepository;
+import com.christopherdowd.UserProfileManagement.service.EncryptionService;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.cloud.spring.pubsub.core.PubSubTemplate;
+
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -7,98 +17,163 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import com.christopherdowd.UserProfileManagement.TestDataUtil;
-import com.christopherdowd.UserProfileManagement.domain.UserProfile;
-import com.christopherdowd.UserProfileManagement.dto.UserProfileRequestDto;
-import com.christopherdowd.UserProfileManagement.dto.UserProfileResponseDto;
-import com.christopherdowd.UserProfileManagement.mapper.UserProfileMapper;
-import com.christopherdowd.UserProfileManagement.repository.UserProfileRepository;
-import com.christopherdowd.UserProfileManagement.service.EncryptionService;
-import com.google.cloud.spring.pubsub.core.PubSubTemplate;
-// Assuming your service class is UserProfileServiceImpl and other classes are correctly named and imported.
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-@ExtendWith(MockitoExtension.class) // If using JUnit 5
-public class UserProfileServiceImplTest { // Assuming your service is UserProfileServiceImpl
+@ExtendWith(MockitoExtension.class)
+public class UserProfileServiceImplTest {
 
     @Mock
-    private EncryptionService crypto; // Assuming EncryptionService is the type
+    private UserProfileRepository userRepository; 
+
+    // If UserProfileMapper is not directly used by the 'create' method to build the response DTO,
+    // (i.e., the response DTO is manually constructed), then this mock might not be needed for this specific test.
+    // @Mock
+    // private UserProfileMapper mapper; 
+
     @Mock
-    private UserProfileMapper mapper; // Assuming UserProfileMapper is the type
+    private EncryptionService crypto;
+
     @Mock
-    private UserProfileRepository repo; // Assuming UserProfileRepository is the type
+    private PubSubTemplate pubSubTemplate;
+
     @Mock
-    private PubSubTemplate pubSub; // Assuming PubSubTemplate is the type (or your specific pubsub interface)
+    private ObjectMapper objectMapper;
 
     @InjectMocks
-    private UserProfileServiceImpl service; // Your service class implementation
+    private UserProfileServiceImpl userProfileService;
+
+    private final String TEST_TOPIC_NAME = "test-user-creation-topic";
+
+    @BeforeEach
+    void setUp() {
+        // Manually set the topic name for the service instance, 
+        // as @Value won't be processed in unit test without Spring context
+        userProfileService.setUserCreationTopic(TEST_TOPIC_NAME);
+    }
 
     @Test
-    void create_encryptsSsnAndSavesAndPublishesAndReturnsDto() throws Exception { // Renamed for clarity
-        // GIVEN
-        UserProfileRequestDto requestDto = TestDataUtil.createAliceRequestDto();
-        String expectedEncryptedSsn = "encSSN_for_Alice"; // Make it slightly more descriptive
+    void create_shouldEncryptSsnPublishToPubSubAndReturnDto_whenSuccessful() throws Exception {
+        // Arrange
+        UserProfileRequestDto requestDto = UserProfileRequestDto.builder()
+                .username("testuser")
+                .email("test@example.com")
+                .socialSecurityNumber("123-45-6789")
+                .build();
 
-        // Mock the entity that mapper.toUser would return.
-        // This entity will have username and email from the requestDto.
-        // The service will then set its ID and encryptedSocialSecurityNumber.
-        UserProfile entityFromMapper = new UserProfile();
-        entityFromMapper.setUsername(requestDto.getUsername());
-        entityFromMapper.setEmail(requestDto.getEmail());
+        String rawSsn = requestDto.getSocialSecurityNumber();
+        String expectedEncryptedSsn = "encryptedSsn123";
+        
+        // Mock encryption
+        when(crypto.encrypt(rawSsn)).thenReturn(expectedEncryptedSsn);
 
-        when(crypto.encrypt(requestDto.getSocialSecurityNumber()))
-            .thenReturn(expectedEncryptedSsn);
+        // Mock ObjectMapper to return a predictable JSON string and allow capturing the DTO
+        when(objectMapper.writeValueAsString(any(UserCreationMessageDto.class)))
+            .thenAnswer(invocation -> {
+                UserCreationMessageDto msgDto = invocation.getArgument(0);
+                // Construct a JSON string based on the captured DTO for verification
+                return String.format(
+                    "{\"id\":\"%s\",\"username\":\"%s\",\"email\":\"%s\",\"encryptedSocialSecurityNumber\":\"%s\"}",
+                    msgDto.getId(), 
+                    msgDto.getUsername(), 
+                    msgDto.getEmail(), 
+                    msgDto.getEncryptedSocialSecurityNumber()
+                );
+            });
 
-        when(mapper.toUser(requestDto)).thenReturn(entityFromMapper);
+        // Act
+        UserProfileResponseDto responseDto = userProfileService.create(requestDto);
 
-        // Mock the repository save to return the entity that was passed to it.
-        // The entity passed will be 'entityFromMapper' after its ID and encryptedSsn are set by the service.
-        when(repo.save(any(UserProfile.class)))
-            .thenAnswer(invocation -> invocation.getArgument(0));
+        // Assert
+        // 1. Verify SSN Encryption
+        verify(crypto, times(1)).encrypt(rawSsn);
 
-        // This is the DTO we expect the service to return.
-        // Note: Its ID is from TestDataUtil, which might differ from the randomly generated ID.
-        UserProfileResponseDto expectedResponseDto = TestDataUtil.createAliceResponseDto();
-        // Mock the mapper to return this expected DTO when called with any UserProfile.
-        // This means 'actual' in the test will be 'expectedResponseDto'.
-        when(mapper.toUserResponseDto(any(UserProfile.class)))
-            .thenReturn(expectedResponseDto);
+        // 2. Capture and Verify Pub/Sub Message Content (UserCreationMessageDto)
+        ArgumentCaptor<UserCreationMessageDto> messageDtoCaptor = ArgumentCaptor.forClass(UserCreationMessageDto.class);
+        verify(objectMapper, times(1)).writeValueAsString(messageDtoCaptor.capture());
+        UserCreationMessageDto capturedMessageDto = messageDtoCaptor.getValue();
 
-        // WHEN
-        UserProfileResponseDto actualResponseDto = service.create(requestDto);
+        assertNotNull(capturedMessageDto.getId(), "Generated User ID should not be null in Pub/Sub message");
+        assertEquals(requestDto.getUsername(), capturedMessageDto.getUsername());
+        assertEquals(requestDto.getEmail(), capturedMessageDto.getEmail());
+        assertEquals(expectedEncryptedSsn, capturedMessageDto.getEncryptedSocialSecurityNumber());
 
-        // THEN
-        // 1. Assert the returned DTO
-        // assertEquals is generally preferred for value objects over assertSame.
-        // This will pass because mapper.toUserResponseDto is mocked to return expectedResponseDto.
-        assertEquals(expectedResponseDto, actualResponseDto);
-        // assertSame(expectedResponseDto, actualResponseDto); // Also works due to the mock
+        // 3. Verify Pub/Sub Publishing Action
+        ArgumentCaptor<String> topicCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
+        verify(pubSubTemplate, times(1)).publish(topicCaptor.capture(), payloadCaptor.capture());
+        
+        assertEquals(TEST_TOPIC_NAME, topicCaptor.getValue());
+        String actualPublishedPayload = payloadCaptor.getValue();
+        assertTrue(actualPublishedPayload.contains("\"id\":\"" + capturedMessageDto.getId() + "\""));
+        assertTrue(actualPublishedPayload.contains("\"username\":\"" + requestDto.getUsername() + "\""));
+        assertTrue(actualPublishedPayload.contains("\"email\":\"" + requestDto.getEmail() + "\""));
+        assertTrue(actualPublishedPayload.contains("\"encryptedSocialSecurityNumber\":\"" + expectedEncryptedSsn + "\""));
 
-        // 2. Verify encryption service was called
-        verify(crypto).encrypt(requestDto.getSocialSecurityNumber());
+        // 4. Verify No Direct Save to Repository in this method
+        verify(userRepository, never()).save(any(UserProfile.class));
 
-        // 3. Capture the entity passed to repo.save() and verify its state
-        ArgumentCaptor<UserProfile> userEntityCaptor = ArgumentCaptor.forClass(UserProfile.class);
-        verify(repo).save(userEntityCaptor.capture());
-        UserProfile savedEntity = userEntityCaptor.getValue();
+        // 5. Verify Returned DTO
+        assertNotNull(responseDto);
+        assertEquals(capturedMessageDto.getId(), responseDto.getId(), "ID in response DTO should match generated ID for Pub/Sub message");
+        assertEquals(requestDto.getUsername(), responseDto.getUsername());
+        assertEquals(requestDto.getEmail(), responseDto.getEmail());
+    }
 
-        assertNotNull(savedEntity.getId(), "Saved entity ID should not be null");
-        assertEquals(expectedEncryptedSsn, savedEntity.getEncryptedSocialSecurityNumber(), "Encrypted SSN mismatch");
-        assertEquals(requestDto.getUsername(), savedEntity.getUsername(), "Username mismatch");
-        assertEquals(requestDto.getEmail(), savedEntity.getEmail(), "Email mismatch");
+    @Test
+    void create_shouldThrowRuntimeException_whenEncryptionFails() throws Exception {
+        // Arrange
+        UserProfileRequestDto requestDto = UserProfileRequestDto.builder()
+                .username("testuser")
+                .email("test@example.com")
+                .socialSecurityNumber("123-45-6789")
+                .build();
+        
+        when(crypto.encrypt(requestDto.getSocialSecurityNumber())).thenThrow(new Exception("Encryption error"));
 
-        // 4. Verify Pub/Sub was called with the CORRECT ID (the one from the saved entity)
-        assertNotNull(savedEntity.getId(), "ID used for Pub/Sub publish should not be null");
-        verify(pubSub).publish(eq("users-create-topic"), eq(savedEntity.getId().getBytes()));
+        // Act & Assert
+        RuntimeException exception = assertThrows(RuntimeException.class, () -> {
+            userProfileService.create(requestDto);
+        });
+        
+        assertEquals("Failed to encrypt Social Security Number during user creation.", exception.getMessage());
+        verify(crypto, times(1)).encrypt(requestDto.getSocialSecurityNumber());
+        // Ensure further operations like serialization or publishing are not attempted
+        verify(objectMapper, never()).writeValueAsString(any());
+        verify(pubSubTemplate, never()).publish(anyString(), anyString());
+    }
 
-        // 5. Verify the mapper was called to produce the response DTO
-        // We pass the 'savedEntity' (which is the same instance as 'entityFromMapper' after modification)
-        // to this verification.
-        verify(mapper).toUserResponseDto(savedEntity);
+    @Test
+    void create_shouldThrowRuntimeException_whenPublishingFails() throws Exception {
+        // Arrange
+        UserProfileRequestDto requestDto = UserProfileRequestDto.builder()
+                .username("testuser")
+                .email("test@example.com")
+                .socialSecurityNumber("123-45-6789")
+                .build();
+
+        String expectedEncryptedSsn = "encryptedSsn123";
+        String jsonPayload = "{\"id\":\"some-uuid\",\"username\":\"testuser\",\"email\":\"test@example.com\",\"encryptedSocialSecurityNumber\":\"encryptedSsn123\"}";
+
+        when(crypto.encrypt(requestDto.getSocialSecurityNumber())).thenReturn(expectedEncryptedSsn);
+        when(objectMapper.writeValueAsString(any(UserCreationMessageDto.class))).thenReturn(jsonPayload);
+        doThrow(new RuntimeException("Pub/Sub publish error")).when(pubSubTemplate).publish(eq(TEST_TOPIC_NAME), eq(jsonPayload));
+
+        // Act & Assert
+        RuntimeException exception = assertThrows(RuntimeException.class, () -> {
+            userProfileService.create(requestDto);
+        });
+
+        assertEquals("Failed to publish user creation event.", exception.getMessage());
+        verify(crypto, times(1)).encrypt(requestDto.getSocialSecurityNumber());
+        verify(objectMapper, times(1)).writeValueAsString(any(UserCreationMessageDto.class));
+        verify(pubSubTemplate, times(1)).publish(eq(TEST_TOPIC_NAME), eq(jsonPayload));
     }
 }
